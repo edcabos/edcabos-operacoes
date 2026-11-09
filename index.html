@@ -631,7 +631,7 @@ let lastLiveSyncAt=0;
 let lastSepFingerprint='';
 let lastBolFingerprint='';
 
-const $=s=>document.querySelector(s), $=s=>[...document.querySelectorAll(s)];
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const qsa=(s,scope=document)=>[...scope.querySelectorAll(s)];
 function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function fmt(ts){if(!ts)return '';const d=new Date(ts);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
