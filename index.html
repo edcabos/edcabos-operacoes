@@ -727,14 +727,20 @@ async function firstAccess(email,password){
 
 async function boot(){
  showLoading(true);
- const {data:{session}}=await sb.auth.getSession();
- if(!session){showLoading(false);return}
- if(!(await checkAccess())){await sb.auth.signOut();showLoading(false);return}
- $('#loginScreen').classList.add('hidden');$('#appRoot').classList.remove('hidden');
- await loadAll();
- setupRealtime();
- startLiveWatchdog();
- showLoading(false);
+ try{
+   const {data:{session}}=await sb.auth.getSession();
+   if(!session)return;
+   if(!(await checkAccess())){await sb.auth.signOut();return}
+   $('#loginScreen').classList.add('hidden');$('#appRoot').classList.remove('hidden');
+   await loadAll();
+   setupRealtime();
+   startLiveWatchdog();
+ }catch(err){
+   console.error('Falha ao iniciar KEEP',err);
+   toast('Erro ao iniciar o KEEP. Atualize a página.');
+ }finally{
+   showLoading(false);
+ }
 }
 async function loadAll(){
  const [p,s,b,h]=await Promise.all([
@@ -1146,7 +1152,7 @@ function bindSep(){
      renderSepCard(id);
    }
  });
- $('[data-history-toggle]').forEach(b=>b.onclick=()=>{openHistory.has(b.dataset.historyToggle)?openHistory.delete(b.dataset.historyToggle):openHistory.add(b.dataset.historyToggle);renderSep()});
+ $('[data-history-toggle]').forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
  $$('[data-separator]').forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{separador_id:el.value||null,separador_definido_em:el.value?new Date().toISOString():null})
