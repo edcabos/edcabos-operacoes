@@ -631,7 +631,8 @@ let lastLiveSyncAt=0;
 let lastSepFingerprint='';
 let lastBolFingerprint='';
 
-const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const $=s=>document.querySelector(s), $=s=>[...document.querySelectorAll(s)];
+const qsa=(s,scope=document)=>[...scope.querySelectorAll(s)];
 function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function fmt(ts){if(!ts)return '';const d=new Date(ts);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function age(ts){const m=Math.max(0,Math.floor((Date.now()-new Date(ts))/60000));if(m<60)return 'há '+m+' min';const h=Math.floor(m/60);if(h<24)return 'há '+h+'h';return 'há '+Math.floor(h/24)+' dias'}
@@ -670,7 +671,7 @@ function updateConnectionHint(){
  const b=$('#soundBtn');
  if(!b)return;
  const rt=realtimeHealthy?'Realtime conectado':'Reconectando';
- b.title=(soundEnabled?'Som ativo':'Som desativado')+' · '+rt+' · sincronização de segurança a cada 5s';
+ b.title=(soundEnabled?'Som ativo':'Som desativado')+' · '+rt+' · sincronização de segurança a cada 8s';
 }
 setInterval(updateConnectionHint,2000);
 
@@ -837,6 +838,7 @@ async function syncLiveData({notifyNew=true}={}){
  }
 }
 let realtimeReconcileTimer=null;
+let historyRefreshTimer=null;
 function scheduleReconcile(){
  clearTimeout(realtimeReconcileTimer);
  realtimeReconcileTimer=setTimeout(()=>syncLiveData({notifyNew:false}),700);
@@ -873,15 +875,20 @@ async function setupRealtime(force=false){
     if(id && payload.eventType!=='DELETE')seenSepIds.add(id);
     if(id && payload.eventType==='DELETE')seenSepIds.delete(id);
 
+    const current=id?separacoes.find(x=>x.id===id):null;
+    const duplicateUpdate=payload.eventType==='UPDATE' && current?.updated_at && payload.new?.updated_at && current.updated_at===payload.new.updated_at;
+
     separacoes=applyRealtimeRow(separacoes,payload);
     lastSepFingerprint=rowsFingerprint(separacoes);
     lastLiveSyncAt=Date.now();
 
-    if(payload.eventType==='UPDATE' && id)renderSepCard(id);
-    else if(payload.eventType==='DELETE' && id)removeSepCard(id);
-    else safeRenderSep();
+    if(!duplicateUpdate){
+      if(payload.eventType==='UPDATE' && id)renderSepCard(id);
+      else if(payload.eventType==='DELETE' && id)removeSepCard(id);
+      else safeRenderSep();
+    }
 
-    renderHistory();
+    if(!$('#hist').classList.contains('hidden'))renderHistory();
     scheduleReconcile();
  })
  .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_boletos'},payload=>{
@@ -892,14 +899,17 @@ async function setupRealtime(force=false){
     renderHistory();
     scheduleReconcile();
  })
- .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_historico'},async payload=>{
-    const h=await sb.from('operacoes_historico').select('*').order('created_at',{ascending:true});
-    if(!h.error){
-      historico=h.data||[];
-      renderHistory();
-      const row=payload.new||payload.old;
-      if(row?.entidade==='separacao'&&row?.entidade_id)renderSepCard(row.entidade_id);
-    }
+ .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_historico'},payload=>{
+    const row=payload.new||payload.old;
+    clearTimeout(historyRefreshTimer);
+    historyRefreshTimer=setTimeout(async()=>{
+      const h=await sb.from('operacoes_historico').select('*').order('created_at',{ascending:true});
+      if(!h.error){
+        historico=h.data||[];
+        if(!$('#hist').classList.contains('hidden'))renderHistory();
+        if(row?.entidade==='separacao'&&row?.entidade_id&&openHistory.has(row.entidade_id))renderSepCard(row.entidade_id);
+      }
+    },350);
  })
  .subscribe(status=>{
     realtimeHealthy=status==='SUBSCRIBED';
@@ -926,7 +936,7 @@ function startLiveWatchdog(){
    if(!realtimeHealthy || (Date.now()-lastLiveSyncAt)>20000){
      setupRealtime(true);
    }
- },5000);
+ },8000);
 }
 
 document.addEventListener('visibilitychange',()=>{
@@ -1036,9 +1046,9 @@ function renderSepCard(id){
  reorderSepGrid('sepDoneGrid',done.map(y=>y.id));
  updateSepCounts();
  restoreDraftForCard(id);
- bindSep();
+ bindSep(node);
  requestAnimationFrame(()=>{
-   $$('[data-requester-note],[data-internal-note]').forEach(autoGrow);
+   qsa('[data-requester-note],[data-internal-note]',node).forEach(autoGrow);
  });
 }
 function removeSepCard(id){
@@ -1083,7 +1093,7 @@ function renderSep(){
    if(unsaved)unsaved.classList.remove('hidden');
  });
 
- bindSep();
+ bindSep($('#sepContent'));
 }
 async function patchSep(id,patch){
  const idx=separacoes.findIndex(s=>s.id===id);
@@ -1108,7 +1118,6 @@ async function patchSep(id,patch){
  const currentIdx=separacoes.findIndex(s=>s.id===id);
  if(currentIdx>=0)separacoes[currentIdx]={...separacoes[currentIdx],...data};
  lastSepFingerprint=rowsFingerprint(separacoes);
- renderSepCard(id);
  return true;
 }
 
@@ -1147,9 +1156,9 @@ async function patchBol(id,patch){
  }
  return true;
 }
-function bindSep(){
- $$('[data-priority]').forEach(el=>el.onchange=async()=>{await patchSep(el.dataset.priority,{prioridade:el.checked})});
- $$('[data-location]').forEach(el=>el.onchange=async()=>{
+function bindSep(scope=document){
+ qsa('[data-priority]',scope).forEach(el=>el.onchange=async()=>{await patchSep(el.dataset.priority,{prioridade:el.checked})});
+ qsa('[data-location]',scope).forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.location);
    if(!x)return;
    const antigo=x.local;
@@ -1170,16 +1179,16 @@ function bindSep(){
      renderSepCard(id);
    }
  });
- $$('[data-history-toggle]').forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
- $$('[data-separator]').forEach(el=>el.onchange=async()=>{
+ qsa('[data-history-toggle]',scope).forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
+ qsa('[data-separator]',scope).forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{separador_id:el.value||null,separador_definido_em:el.value?new Date().toISOString():null})
  });
- $$('[data-checker]').forEach(el=>el.onchange=async()=>{
+ qsa('[data-checker]',scope).forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.checker); if(el.value&&el.value===x.separador_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{conferente_id:el.value||null,conferente_definido_em:el.value?new Date().toISOString():null})
  });
- $$('[data-requester-note],[data-internal-note]').forEach(el=>{
+ qsa('[data-requester-note],[data-internal-note]',scope).forEach(el=>{
    autoGrow(el);
 
    const isRequester=el.hasAttribute('data-requester-note');
@@ -1214,7 +1223,7 @@ function bindSep(){
    };
  });
 
- $$('[data-save-requester-note],[data-save-internal-note]').forEach(btn=>{
+ qsa('[data-save-requester-note],[data-save-internal-note]',scope).forEach(btn=>{
    btn.onclick=async()=>{
      const isRequester=btn.hasAttribute('data-save-requester-note');
      const id=isRequester?btn.dataset.saveRequesterNote:btn.dataset.saveInternalNote;
@@ -1261,7 +1270,7 @@ function bindSep(){
      },1000);
    };
  });
- $$('[data-act]').forEach(b=>b.onclick=()=>handleSep(b.dataset.id,b.dataset.act));
+ qsa('[data-act]',scope).forEach(b=>b.onclick=()=>handleSep(b.dataset.id,b.dataset.act));
 }
 async function handleSep(id,act){
  const x=separacoes.find(s=>s.id===id);if(!x)return;
