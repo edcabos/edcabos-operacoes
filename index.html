@@ -619,6 +619,8 @@ let livePollTimer=null;
 let liveSyncInProgress=false;
 let seenSepIds=new Set();
 let lastLiveSyncAt=0;
+let lastSepFingerprint='';
+let lastBolFingerprint='';
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
@@ -638,6 +640,12 @@ function askDelete(ref){return confirm('Deseja excluir "'+ref+'"?')}
 function statusClass(s){return s==='criado'?'created':s==='separando'?'separating':s==='faltando_material'?'missing':'finished'}
 function statusLabel(s){return s==='criado'?'CRIADO':s==='separando'?'SEPARANDO':s==='faltando_material'?'FALTANDO MATERIAL':'FINALIZADO'}
 function parcelLabel(v){return v==='1'?'1 Parcela':v==='2'?'2 Parcelas':v==='3'?'3 Parcelas':'+3 Parcelas'}
+function rowsFingerprint(rows){
+ return [...rows].sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(x=>[
+   x.id,x.updated_at,x.status,x.prioridade,x.local,x.separador_id,x.conferente_id,
+   x.finalizado_em,x.observacao_solicitante,x.observacao_interna
+ ].join('|')).join('||');
+}
 const notificationAudio=new Audio('/notification.wav');
 notificationAudio.preload='auto';
 notificationAudio.volume=1;
@@ -741,6 +749,8 @@ async function loadAll(){
  boletos=b.data||[];
  historico=h.data||[];
  seenSepIds=new Set(separacoes.map(x=>x.id));
+ lastSepFingerprint=rowsFingerprint(separacoes);
+ lastBolFingerprint=rowsFingerprint(boletos);
  lastLiveSyncAt=Date.now();
  renderAll();
  return true;
@@ -761,20 +771,45 @@ async function syncLiveData({notifyNew=true}={}){
 
    const nextSep=s.data||[];
    const nextBol=b.data||[];
+   const nextSepFingerprint=rowsFingerprint(nextSep);
+   const nextBolFingerprint=rowsFingerprint(nextBol);
 
    if(notifyNew){
      const hasNew=nextSep.some(x=>!seenSepIds.has(x.id));
      if(hasNew)playBeep();
    }
 
-   separacoes=nextSep;
-   boletos=nextBol;
+   const sepChanged=nextSepFingerprint!==lastSepFingerprint;
+   const bolChanged=nextBolFingerprint!==lastBolFingerprint;
+
+   if(sepChanged){
+     const oldById=new Map(separacoes.map(x=>[x.id,x]));
+     const nextIds=new Set(nextSep.map(x=>x.id));
+     const structural=nextSep.length!==separacoes.length || separacoes.some(x=>!nextIds.has(x.id));
+     const changedIds=nextSep.filter(x=>{
+       const old=oldById.get(x.id);
+       return !old || old.updated_at!==x.updated_at;
+     }).map(x=>x.id);
+
+     separacoes=nextSep;
+     lastSepFingerprint=nextSepFingerprint;
+
+     if(structural || changedIds.length>6){
+       safeRenderSep();
+     }else{
+       changedIds.forEach(id=>renderSepCard(id));
+     }
+   }
+
+   if(bolChanged){
+     boletos=nextBol;
+     lastBolFingerprint=nextBolFingerprint;
+     renderBol();
+   }
+
    seenSepIds=new Set(nextSep.map(x=>x.id));
    lastLiveSyncAt=Date.now();
-
-   safeRenderSep();
-   renderBol();
-   renderHistory();
+   if(sepChanged||bolChanged)renderHistory();
    return true;
  }finally{
    liveSyncInProgress=false;
@@ -818,24 +853,31 @@ async function setupRealtime(force=false){
     if(id && payload.eventType==='DELETE')seenSepIds.delete(id);
 
     separacoes=applyRealtimeRow(separacoes,payload);
+    lastSepFingerprint=rowsFingerprint(separacoes);
     lastLiveSyncAt=Date.now();
-    safeRenderSep();
+
+    if(payload.eventType==='UPDATE' && id)renderSepCard(id);
+    else if(payload.eventType==='DELETE' && id)removeSepCard(id);
+    else safeRenderSep();
+
     renderHistory();
     scheduleReconcile();
  })
  .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_boletos'},payload=>{
     boletos=applyRealtimeRow(boletos,payload);
+    lastBolFingerprint=rowsFingerprint(boletos);
     lastLiveSyncAt=Date.now();
     renderBol();
     renderHistory();
     scheduleReconcile();
  })
- .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_historico'},async()=>{
+ .on('postgres_changes',{event:'*',schema:'public',table:'operacoes_historico'},async payload=>{
     const h=await sb.from('operacoes_historico').select('*').order('created_at',{ascending:true});
     if(!h.error){
       historico=h.data||[];
       renderHistory();
-      safeRenderSep();
+      const row=payload.new||payload.old;
+      if(row?.entidade==='separacao'&&row?.entidade_id)renderSepCard(row.entidade_id);
     }
  })
  .subscribe(status=>{
@@ -893,7 +935,7 @@ function sepActions(x){
 }
 function sepCard(x){
  const workers=x.status!=='criado';
- return `<article class="card ${statusClass(x.status)} ${x.prioridade&&x.status!=='finalizado'?'priority':''}">
+ return `<article data-sep-card="${x.id}" class="card ${statusClass(x.status)} ${x.prioridade&&x.status!=='finalizado'?'priority':''}">
  <div class="cardtop"><div class="ref">${esc(x.referencia)}</div>${x.status!=='finalizado'?`<div class="priorityControl"><span class="priorityLabel">Prioridade</span><label class="switch"><input type="checkbox" data-priority="${x.id}" ${x.prioridade?'checked':''}><span class="slider"></span></label></div>`:''}</div>
  <div class="meta">
  <span class="tag place">${x.local==='loja'?'🏪 LOJA':x.local==='galpao'?'🏭 GALPÃO':'🏪🏭 LOJA E GALPÃO'}</span>
@@ -912,6 +954,74 @@ function sepCard(x){
  ${timelineHtml(x)}
  <div class="footer"><span>${x.status==='finalizado'&&x.finalizado_em?'finalizado em '+fmt(x.finalizado_em):age(x.created_at)}</span><div class="actions">${sepActions(x)}</div></div></article>`
 }
+function sepVisibleInCurrentView(x){
+ const q=$('#search').value.trim();
+ return matches(x,q) && (sepFilter==='todos'||(sepFilter==='loja'?(x.local==='loja'||x.local==='ambos'):sepFilter==='galpao'?(x.local==='galpao'||x.local==='ambos'):sepFilter==='pendentes'?x.status!=='finalizado':sepFilter==='finalizados'?x.status==='finalizado':true));
+}
+function restoreDraftForCard(id){
+ ['sol','int'].forEach(kind=>{
+   const key=id+'|'+kind;
+   if(!observationDrafts.has(key))return;
+   const isRequester=kind==='sol';
+   const el=document.querySelector(isRequester?`[data-requester-note="${id}"]`:`[data-internal-note="${id}"]`);
+   if(!el)return;
+   el.value=observationDrafts.get(key);
+   autoGrow(el);
+   const btn=document.querySelector(isRequester?`[data-save-requester-note="${id}"]`:`[data-save-internal-note="${id}"]`);
+   const unsaved=document.querySelector(`[data-note-unsaved="${id}:${kind}"]`);
+   if(btn)btn.disabled=false;
+   if(unsaved)unsaved.classList.remove('hidden');
+ });
+}
+function reorderSepGrid(gridId,ids){
+ const grid=document.getElementById(gridId);
+ if(!grid)return;
+ ids.forEach(id=>{
+   const el=grid.querySelector(`[data-sep-card="${id}"]`);
+   if(el)grid.appendChild(el);
+ });
+}
+function updateSepCounts(){
+ const pg=$('#sepPendingGrid'),dg=$('#sepDoneGrid');
+ const pc=$('#sepPendingCount'),dc=$('#sepDoneCount');
+ if(pc&&pg)pc.textContent=pg.children.length;
+ if(dc&&dg)dc.textContent=dg.children.length;
+}
+function renderSepCard(id){
+ const x=separacoes.find(s=>s.id===id);
+ const existing=document.querySelector(`[data-sep-card="${id}"]`);
+ if(!x || !sepVisibleInCurrentView(x)){
+   if(existing)existing.remove();
+   updateSepCounts();
+   return;
+ }
+
+ const targetGridId=x.status==='finalizado'?'sepDoneGrid':'sepPendingGrid';
+ const targetGrid=document.getElementById(targetGridId);
+ if(!targetGrid){
+   safeRenderSep();
+   return;
+ }
+
+ const temp=document.createElement('div');
+ temp.innerHTML=sepCard(x);
+ const node=temp.firstElementChild;
+ if(existing)existing.remove();
+ targetGrid.appendChild(node);
+
+ const pending=separacoes.filter(y=>y.status!=='finalizado'&&sepVisibleInCurrentView(y)).sort((a,b)=>a.prioridade!==b.prioridade?Number(b.prioridade)-Number(a.prioridade):new Date(a.created_at)-new Date(b.created_at));
+ const done=separacoes.filter(y=>y.status==='finalizado'&&sepVisibleInCurrentView(y)).sort((a,b)=>new Date(b.finalizado_em||0)-new Date(a.finalizado_em||0));
+ reorderSepGrid('sepPendingGrid',pending.map(y=>y.id));
+ reorderSepGrid('sepDoneGrid',done.map(y=>y.id));
+ updateSepCounts();
+ restoreDraftForCard(id);
+ bindSep();
+}
+function removeSepCard(id){
+ const el=document.querySelector(`[data-sep-card="${id}"]`);
+ if(el)el.remove();
+ updateSepCounts();
+}
 function safeRenderSep(){
  const active=document.activeElement;
  const typing=observationEditing || (active && (active.matches?.('[data-requester-note]') || active.matches?.('[data-internal-note]')));
@@ -929,8 +1039,8 @@ function renderSep(){
  const pending=arr.filter(x=>x.status!=='finalizado').sort((a,b)=>a.prioridade!==b.prioridade?Number(b.prioridade)-Number(a.prioridade):new Date(a.created_at)-new Date(b.created_at));
  const done=arr.filter(x=>x.status==='finalizado').sort((a,b)=>new Date(b.finalizado_em||0)-new Date(a.finalizado_em||0));
  let out='';
- if(pending.length)out+=`<div class="sectionTitle">Pendentes <span class="count">${pending.length}</span></div><div class="grid">${pending.map(sepCard).join('')}</div>`;
- if(done.length)out+=`<div class="sectionTitle">Finalizados <span class="count">${done.length}</span></div><div class="grid">${done.map(sepCard).join('')}</div>`;
+ if(pending.length)out+=`<div id="sepPendingSection"><div class="sectionTitle">Pendentes <span class="count" id="sepPendingCount">${pending.length}</span></div><div class="grid" id="sepPendingGrid">${pending.map(sepCard).join('')}</div></div>`;
+ if(done.length)out+=`<div id="sepDoneSection"><div class="sectionTitle">Finalizados <span class="count" id="sepDoneCount">${done.length}</span></div><div class="grid" id="sepDoneGrid">${done.map(sepCard).join('')}</div></div>`;
  $('#sepContent').innerHTML=out||'<div class="empty">Nenhuma solicitação encontrada.</div>';
 
  // Restaura rascunhos locais ainda não enviados ao Supabase.
@@ -957,21 +1067,24 @@ async function patchSep(id,patch){
 
  if(idx>=0){
    separacoes[idx]={...separacoes[idx],...patch};
-   safeRenderSep();
-   renderHistory();
+   renderSepCard(id);
  }
 
- const {error}=await sb.from('operacoes_separacoes').update(patch).eq('id',id);
- if(error){
+ const {data,error}=await sb.from('operacoes_separacoes').update(patch).eq('id',id).select('*').maybeSingle();
+ if(error || !data){
    if(idx>=0&&previous){
      separacoes[idx]=previous;
-     safeRenderSep();
-     renderHistory();
+     renderSepCard(id);
    }
    toast('Não foi possível salvar');
-   console.error(error);
+   console.error(error||'Nenhum registro atualizado');
    return false;
  }
+
+ const currentIdx=separacoes.findIndex(s=>s.id===id);
+ if(currentIdx>=0)separacoes[currentIdx]={...separacoes[currentIdx],...data};
+ lastSepFingerprint=rowsFingerprint(separacoes);
+ renderSepCard(id);
  return true;
 }
 
@@ -1030,16 +1143,16 @@ function bindSep(){
      });
      toast(`Local alterado para ${nome(novo)}`);
    }else{
-     renderSep();
+     renderSepCard(id);
    }
  });
- $$('[data-history-toggle]').forEach(b=>b.onclick=()=>{openHistory.has(b.dataset.historyToggle)?openHistory.delete(b.dataset.historyToggle):openHistory.add(b.dataset.historyToggle);renderSep()});
+ $('[data-history-toggle]').forEach(b=>b.onclick=()=>{openHistory.has(b.dataset.historyToggle)?openHistory.delete(b.dataset.historyToggle):openHistory.add(b.dataset.historyToggle);renderSep()});
  $$('[data-separator]').forEach(el=>el.onchange=async()=>{
-   const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSep();return}
+   const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{separador_id:el.value||null,separador_definido_em:el.value?new Date().toISOString():null})
  });
  $$('[data-checker]').forEach(el=>el.onchange=async()=>{
-   const x=separacoes.find(s=>s.id===el.dataset.checker); if(el.value&&el.value===x.separador_id){toast('Separador e conferente devem ser diferentes');renderSep();return}
+   const x=separacoes.find(s=>s.id===el.dataset.checker); if(el.value&&el.value===x.separador_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{conferente_id:el.value||null,conferente_definido_em:el.value?new Date().toISOString():null})
  });
  $$('[data-requester-note],[data-internal-note]').forEach(el=>{
