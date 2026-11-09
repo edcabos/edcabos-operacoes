@@ -81,7 +81,16 @@ h1{font-size:24px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-to
 .workerBox,.noteBox,.timelineBox{background:#00000024;border:1px solid #ffffff16;border-radius:13px;padding:9px}
 .workerBox label,.noteBox label{display:block;font-size:11px;color:#c4cbd2;margin-bottom:5px}
 .workerBox select,.noteBox textarea{width:100%;background:#11161a;border:1px solid #ffffff1e;color:#fff;border-radius:10px;padding:8px 9px;outline:none}
-.noteBox textarea{min-height:54px;resize:none;overflow:hidden;line-height:1.35}
+.noteBox textarea{
+  min-height:72px;
+  height:auto;
+  resize:none;
+  overflow:hidden;
+  line-height:1.45;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  field-sizing:content;
+}
 .noteTitle,.timelineTitle{font-size:11px;color:#c4cbd2;margin-bottom:5px}
 .timelineList{display:grid;gap:6px}
 .timelineItem{display:grid;grid-template-columns:98px 1fr;gap:10px;font-size:11px;color:#d7dce0;line-height:1.35}
@@ -627,7 +636,13 @@ function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt
 function fmt(ts){if(!ts)return '';const d=new Date(ts);return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function age(ts){const m=Math.max(0,Math.floor((Date.now()-new Date(ts))/60000));if(m<60)return 'há '+m+' min';const h=Math.floor(m/60);if(h<24)return 'há '+h+'h';return 'há '+Math.floor(h/24)+' dias'}
 function toast(msg){$('#toastRoot').innerHTML='<div class="toast">'+esc(msg)+'</div>';setTimeout(()=>$('#toastRoot').innerHTML='',1800)}
-function autoGrow(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}
+function autoGrow(el){
+ if(!el)return;
+ el.style.height='auto';
+ const apply=()=>{el.style.height='auto';el.style.height=Math.max(72,el.scrollHeight)+'px'};
+ apply();
+ requestAnimationFrame(apply);
+}
 function person(id){return pessoas.find(p=>p.id===id)}
 function pname(id){return person(id)?.nome||''}
 function requesterOptions(selected=''){return pessoas.filter(p=>p.pode_solicitar).map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.nome)}</option>`).join('')}
@@ -1022,6 +1037,9 @@ function renderSepCard(id){
  updateSepCounts();
  restoreDraftForCard(id);
  bindSep();
+ requestAnimationFrame(()=>{
+   $('[data-requester-note],[data-internal-note]').forEach(autoGrow);
+ });
 }
 function removeSepCard(id){
  const el=document.querySelector(`[data-sep-card="${id}"]`);
