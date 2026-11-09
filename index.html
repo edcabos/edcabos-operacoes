@@ -1038,7 +1038,7 @@ function renderSepCard(id){
  restoreDraftForCard(id);
  bindSep();
  requestAnimationFrame(()=>{
-   $('[data-requester-note],[data-internal-note]').forEach(autoGrow);
+   $$('[data-requester-note],[data-internal-note]').forEach(autoGrow);
  });
 }
 function removeSepCard(id){
@@ -1170,7 +1170,7 @@ function bindSep(){
      renderSepCard(id);
    }
  });
- $('[data-history-toggle]').forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
+ $$('[data-history-toggle]').forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
  $$('[data-separator]').forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{separador_id:el.value||null,separador_definido_em:el.value?new Date().toISOString():null})
