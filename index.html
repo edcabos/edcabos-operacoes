@@ -1091,7 +1091,7 @@ async function patchSep(id,patch){
 
  if(idx>=0){
    separacoes[idx]={...separacoes[idx],...patch};
-   renderSepCard(id);
+   try{renderSepCard(id)}catch(err){console.error('Falha ao atualizar cartão localmente',err)}
  }
 
  const {data,error}=await sb.from('operacoes_separacoes').update(patch).eq('id',id).select('*').maybeSingle();
