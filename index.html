@@ -145,29 +145,8 @@ h1{font-size:24px;margin:0}.subtitle{color:var(--muted);font-size:13px;margin-to
 .topActions{display:flex;gap:8px}
 @media(max-width:760px){.topActions{width:100%}.soundButton,.logoutButton{flex:1}}
 
-.stockFrameWrap{
-  background:#111418;border:1px solid #2a3036;border-radius:16px;overflow:hidden;
-  min-height:72vh;
-}
-.stockToolbar{
-  display:flex;gap:10px;align-items:center;justify-content:space-between;
-  margin-bottom:14px;flex-wrap:wrap;
-}
-.stockStatus{font-size:13px;color:#8f99a4}
-.stockFrame{width:100%;height:74vh;border:0;background:#fff;display:block}
-.openSheetButton{
-  display:inline-flex;align-items:center;gap:8px;text-decoration:none;
-  border:1px solid #333a42;background:#1b2026;color:#f2f4f5;
-  border-radius:10px;padding:10px 13px;font-weight:700;font-size:13px
-}
-.openSheetButton:hover{background:#242a31}
-@media(max-width:700px){.stockFrame{height:68vh}.stockFrameWrap{min-height:68vh}}
 
 
-.stockReadOnly{font-size:12px;color:#9aa4ae;margin-top:4px}
-.stockUpdatedAt{font-size:11px;color:#69737d;margin-top:4px}
-.stockActions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.openSheetButton{cursor:pointer}
 
 
 .priceTabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
@@ -396,8 +375,6 @@ textarea[data-requester-note]:focus,textarea[data-internal-note]:focus{
   <div class="logo"><img src="https://images.tcdn.com.br/files/1382766/themes/3/img/settings/logoedcabostopo1.png?4f4453e4511145932d37738db8d20a08" alt="ED Cabos"></div>
   <button class="nav active" data-view="sep" title="Separação">📦</button>
   <button class="nav" data-view="bol" title="Boletos">💳</button>
-  <button class="nav" data-view="estoque" title="Estoque Google Sheet">▦</button>
-  <button class="nav" data-view="datasheet" title="Datasheet">📋</button>
   <button class="nav" data-view="precos" title="Preços Marketplaces">💰</button>
   <button class="nav" data-view="hist" title="Histórico">◴</button>
   <div class="push"></div><div class="avatar">ED</div>
@@ -421,48 +398,6 @@ textarea[data-requester-note]:focus,textarea[data-internal-note]:focus{
   <section id="bol" class="view hidden">
     <div class="header"><div><h1>Boletos</h1><div class="subtitle">Vermelho = aguardando, roxo = verificar, verde = concluído.</div></div><button class="primary" id="newBol">+ Solicitar boleto</button></div>
     <div class="grid" id="bolGrid"></div>
-  </section>
-
-  <section id="estoque" class="view hidden">
-    <div class="header"><div><h1>Estoque</h1><div class="subtitle">Planilha oficial de estoque — alterações sincronizadas com o Google Sheets.</div></div></div>
-    <div class="stockToolbar">
-      <div>
-        <div class="stockStatus">Fonte: ESTOQUE CABOS DE AUTOMAÇÃO ATUAL</div>
-        <div class="stockReadOnly">🔒 Somente leitura no KEEP · atualização automática a cada 60 segundos</div>
-        <div id="stockUpdatedAt" class="stockUpdatedAt">Aguardando atualização...</div>
-      </div>
-      <div class="stockActions">
-        <button id="refreshStockBtn" class="openSheetButton" type="button">↻ Atualizar agora</button>
-        <a class="openSheetButton" href="https://docs.google.com/spreadsheets/d/1pr6NBc-sJLt4NLUL1E6XAnSUKHux1mVLtAcsbBqDPYc/edit" target="_blank" rel="noopener">↗ Abrir no Google Sheets</a>
-      </div>
-    </div>
-    <div class="stockFrameWrap">
-      <iframe id="stockFrame" class="stockFrame" src="https://docs.google.com/spreadsheets/d/1pr6NBc-sJLt4NLUL1E6XAnSUKHux1mVLtAcsbBqDPYc/preview?rm=minimal" title="ESTOQUE CABOS DE AUTOMAÇÃO ATUAL" loading="lazy"></iframe>
-    </div>
-  </section>
-
-
-  <section id="datasheet" class="view hidden">
-    <div class="header">
-      <div>
-        <h1>Datasheet</h1>
-        <div class="subtitle">Consulta interna da planilha de datasheets — somente leitura no KEEP.</div>
-      </div>
-    </div>
-    <div class="stockToolbar">
-      <div>
-        <div class="stockStatus">Fonte: PVC CAIXAS</div>
-        <div class="stockReadOnly">🔒 Somente leitura no KEEP · atualização automática a cada 60 segundos</div>
-        <div id="datasheetUpdatedAt" class="stockUpdatedAt">Aguardando atualização...</div>
-      </div>
-      <div class="stockActions">
-        <button id="refreshDatasheetBtn" class="openSheetButton" type="button">↻ Atualizar agora</button>
-        <a class="openSheetButton" href="https://docs.google.com/spreadsheets/d/1wR9QulgAFeVmAKFdKUKjdAY54MUNt-hvY0LzE5coh_g/edit" target="_blank" rel="noopener">↗ Abrir no Google Sheets</a>
-      </div>
-    </div>
-    <div class="stockFrameWrap">
-      <iframe id="datasheetFrame" class="stockFrame" src="https://docs.google.com/spreadsheets/d/1wR9QulgAFeVmAKFdKUKjdAY54MUNt-hvY0LzE5coh_g/preview?rm=minimal" title="Datasheet PVC CAIXAS" loading="lazy"></iframe>
-    </div>
   </section>
 
   <section id="precos" class="view hidden">
@@ -1465,8 +1400,8 @@ $$('.nav').forEach(b=>b.onclick=async()=>{
  }
  renderAll();
 });
-$('#sepFilters .filter').forEach(b=>b.onclick=async()=>{
- $('#sepFilters .filter').forEach(x=>x.classList.remove('active'));
+$$('#sepFilters .filter').forEach(b=>b.onclick=async()=>{
+ $$('#sepFilters .filter').forEach(x=>x.classList.remove('active'));
  b.classList.add('active');
  sepFilter=b.dataset.filter;
  if(sepFilter==='finalizados')await ensureFinalizadosLoaded();
@@ -1475,49 +1410,6 @@ $('#sepFilters .filter').forEach(b=>b.onclick=async()=>{
 boot();
 </script>
 
-<script>
-(function(){
-  const STOCK_PREVIEW_URL = "https://docs.google.com/spreadsheets/d/1pr6NBc-sJLt4NLUL1E6XAnSUKHux1mVLtAcsbBqDPYc/preview?rm=minimal";
-  let stockRefreshTimer = null;
-
-  function updateStockTimestamp() {
-    const el = document.getElementById("stockUpdatedAt");
-    if (!el) return;
-    const now = new Date();
-    el.textContent = "Última atualização: " + now.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
-  }
-
-  function refreshStock() {
-    const frame = document.getElementById("stockFrame");
-    if (!frame) return;
-    const sep = STOCK_PREVIEW_URL.includes("?") ? "&" : "?";
-    frame.src = STOCK_PREVIEW_URL + sep + "_ts=" + Date.now();
-    updateStockTimestamp();
-  }
-
-  function startStockAutoRefresh() {
-    if (stockRefreshTimer) clearInterval(stockRefreshTimer);
-    stockRefreshTimer = setInterval(() => {
-      const estoque = document.getElementById("estoque");
-      if (estoque && !estoque.classList.contains("hidden")) refreshStock();
-    }, 60000);
-  }
-
-  document.addEventListener("click", function(ev) {
-    const btn = ev.target.closest("#refreshStockBtn");
-    if (btn) refreshStock();
-
-    const nav = ev.target.closest('[data-view="estoque"]');
-    if (nav) setTimeout(refreshStock, 150);
-  });
-
-  document.addEventListener("DOMContentLoaded", function() {
-    const frame = document.getElementById("stockFrame");
-    if (frame) frame.addEventListener("load", updateStockTimestamp);
-    startStockAutoRefresh();
-  });
-})();
-</script>
 
 
 <script>
@@ -1654,49 +1546,6 @@ boot();
 </script>
 
 
-<script>
-(function(){
-  const DATASHEET_PREVIEW_URL = "https://docs.google.com/spreadsheets/d/1wR9QulgAFeVmAKFdKUKjdAY54MUNt-hvY0LzE5coh_g/preview?rm=minimal";
-  let datasheetRefreshTimer = null;
-
-  function updateDatasheetTimestamp() {
-    const el = document.getElementById("datasheetUpdatedAt");
-    if (!el) return;
-    const now = new Date();
-    el.textContent = "Última atualização: " + now.toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
-  }
-
-  function refreshDatasheet() {
-    const frame = document.getElementById("datasheetFrame");
-    if (!frame) return;
-    const sep = DATASHEET_PREVIEW_URL.includes("?") ? "&" : "?";
-    frame.src = DATASHEET_PREVIEW_URL + sep + "_ts=" + Date.now();
-    updateDatasheetTimestamp();
-  }
-
-  function startDatasheetAutoRefresh() {
-    if (datasheetRefreshTimer) clearInterval(datasheetRefreshTimer);
-    datasheetRefreshTimer = setInterval(() => {
-      const view = document.getElementById("datasheet");
-      if (view && !view.classList.contains("hidden")) refreshDatasheet();
-    }, 60000);
-  }
-
-  document.addEventListener("click", function(ev) {
-    const btn = ev.target.closest("#refreshDatasheetBtn");
-    if (btn) refreshDatasheet();
-
-    const nav = ev.target.closest('[data-view="datasheet"]');
-    if (nav) setTimeout(refreshDatasheet, 150);
-  });
-
-  document.addEventListener("DOMContentLoaded", function() {
-    const frame = document.getElementById("datasheetFrame");
-    if (frame) frame.addEventListener("load", updateDatasheetTimestamp);
-    startDatasheetAutoRefresh();
-  });
-})();
-</script>
 
 <script>
 (function(){
