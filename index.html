@@ -950,6 +950,30 @@ window.addEventListener('online',()=>{
  syncLiveData({notifyNew:true});
  setupRealtime(true);
 });
+async function syncCardHistory(id){
+ const {data,error}=await sb
+   .from('operacoes_historico')
+   .select('*')
+   .eq('entidade','separacao')
+   .eq('entidade_id',id)
+   .order('created_at',{ascending:true});
+ if(error){
+   console.error('Falha ao atualizar histórico do cartão',error);
+   return false;
+ }
+ const other=historico.filter(h=>!(h.entidade==='separacao'&&h.entidade_id===id));
+ historico=[...other,...(data||[])].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+ return true;
+}
+async function syncAllHistory(){
+ const {data,error}=await sb.from('operacoes_historico').select('*').order('created_at',{ascending:true});
+ if(error){
+   console.error('Falha ao atualizar histórico',error);
+   return false;
+ }
+ historico=data||[];
+ return true;
+}
 function timelineHtml(x){
  const items=historico.filter(h=>h.entidade==='separacao'&&h.entidade_id===x.id);
  const open=openHistory.has(x.id);
@@ -1179,7 +1203,18 @@ function bindSep(scope=document){
      renderSepCard(id);
    }
  });
- qsa('[data-history-toggle]',scope).forEach(b=>b.onclick=()=>{const id=b.dataset.historyToggle;openHistory.has(id)?openHistory.delete(id):openHistory.add(id);renderSepCard(id)});
+ qsa('[data-history-toggle]',scope).forEach(b=>b.onclick=async()=>{
+   const id=b.dataset.historyToggle;
+   if(openHistory.has(id)){
+     openHistory.delete(id);
+     renderSepCard(id);
+     return;
+   }
+   b.disabled=true;
+   await syncCardHistory(id);
+   openHistory.add(id);
+   renderSepCard(id);
+ });
  qsa('[data-separator]',scope).forEach(el=>el.onchange=async()=>{
    const x=separacoes.find(s=>s.id===el.dataset.separator); if(el.value&&el.value===x.conferente_id){toast('Separador e conferente devem ser diferentes');renderSepCard(x.id);return}
    await patchSep(x.id,{separador_id:el.value||null,separador_definido_em:el.value?new Date().toISOString():null})
@@ -1371,7 +1406,14 @@ updateSoundButton();
 document.addEventListener('pointerdown',unlockSound,{once:true});
 document.addEventListener('keydown',unlockSound,{once:true});
 $('#newSep').onclick=openSep;$('#newBol').onclick=openBol;$('#search').oninput=renderAll;
-$$('.nav').forEach(b=>b.onclick=()=>{$$('.nav').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.view').forEach(v=>v.classList.add('hidden'));$('#'+b.dataset.view).classList.remove('hidden');renderAll()});
+$('.nav').forEach(b=>b.onclick=async()=>{
+ $('.nav').forEach(x=>x.classList.remove('active'));
+ b.classList.add('active');
+ $('.view').forEach(v=>v.classList.add('hidden'));
+ $('#'+b.dataset.view).classList.remove('hidden');
+ if(b.dataset.view==='hist')await syncAllHistory();
+ renderAll();
+});
 $$('#sepFilters .filter').forEach(b=>b.onclick=()=>{$$('#sepFilters .filter').forEach(x=>x.classList.remove('active'));b.classList.add('active');sepFilter=b.dataset.filter;renderSep()});
 boot();
 </script>
