@@ -630,6 +630,9 @@ let seenSepIds=new Set();
 let lastLiveSyncAt=0;
 let lastSepFingerprint='';
 let lastBolFingerprint='';
+let finalizadosLoadedAll=false;
+let finalizadosLoading=false;
+const RECENT_DONE_LIMIT=30;
 
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const qsa=(s,scope=document)=>[...scope.querySelectorAll(s)];
@@ -671,7 +674,7 @@ function updateConnectionHint(){
  const b=$('#soundBtn');
  if(!b)return;
  const rt=realtimeHealthy?'Realtime conectado':'Reconectando';
- b.title=(soundEnabled?'Som ativo':'Som desativado')+' · '+rt+' · sincronização de segurança a cada 8s';
+ b.title=(soundEnabled?'Som ativo':'Som desativado')+' · '+rt+' · sincronização de segurança sob demanda';
 }
 setInterval(updateConnectionHint,2000);
 
@@ -759,17 +762,22 @@ async function boot(){
  }
 }
 async function loadAll(){
- const [p,s,b,h]=await Promise.all([
+ const [p,sp,sd,b]=await Promise.all([
    sb.from('operacoes_pessoas').select('*').eq('ativo',true).order('nome'),
-   sb.from('operacoes_separacoes').select('*'),
-   sb.from('operacoes_boletos').select('*'),
-   sb.from('operacoes_historico').select('*').order('created_at',{ascending:true})
+   sb.from('operacoes_separacoes').select('*').neq('status','finalizado').order('created_at',{ascending:true}),
+   sb.from('operacoes_separacoes').select('*').eq('status','finalizado').order('finalizado_em',{ascending:false}).limit(RECENT_DONE_LIMIT),
+   sb.from('operacoes_boletos').select('*')
  ]);
- if(p.error||s.error||b.error||h.error){toast('Erro ao carregar dados');console.error(p.error,s.error,b.error,h.error);return false}
+ if(p.error||sp.error||sd.error||b.error){
+   toast('Erro ao carregar dados');
+   console.error(p.error,sp.error,sd.error,b.error);
+   return false;
+ }
  pessoas=p.data||[];
- separacoes=s.data||[];
+ separacoes=[...(sp.data||[]),...(sd.data||[])];
  boletos=b.data||[];
- historico=h.data||[];
+ historico=[];
+ finalizadosLoadedAll=false;
  seenSepIds=new Set(separacoes.map(x=>x.id));
  lastSepFingerprint=rowsFingerprint(separacoes);
  lastBolFingerprint=rowsFingerprint(boletos);
@@ -782,16 +790,20 @@ async function syncLiveData({notifyNew=true}={}){
  if(liveSyncInProgress || document.hidden || !navigator.onLine)return false;
  liveSyncInProgress=true;
  try{
-   const [s,b]=await Promise.all([
-     sb.from('operacoes_separacoes').select('*'),
+   const [sp,sd,b]=await Promise.all([
+     sb.from('operacoes_separacoes').select('*').neq('status','finalizado').order('created_at',{ascending:true}),
+     sb.from('operacoes_separacoes').select('*').eq('status','finalizado').order('finalizado_em',{ascending:false}).limit(RECENT_DONE_LIMIT),
      sb.from('operacoes_boletos').select('*')
    ]);
-   if(s.error||b.error){
-     console.error('Falha na sincronização de segurança',s.error,b.error);
+   if(sp.error||sd.error||b.error){
+     console.error('Falha na sincronização de segurança',sp.error,sd.error,b.error);
      return false;
    }
 
-   const nextSep=s.data||[];
+   const fresh=[...(sp.data||[]),...(sd.data||[])];
+   const byId=new Map(separacoes.map(x=>[x.id,x]));
+   fresh.forEach(x=>byId.set(x.id,x));
+   const nextSep=[...byId.values()];
    const nextBol=b.data||[];
    const nextSepFingerprint=rowsFingerprint(nextSep);
    const nextBolFingerprint=rowsFingerprint(nextBol);
@@ -831,7 +843,7 @@ async function syncLiveData({notifyNew=true}={}){
 
    seenSepIds=new Set(nextSep.map(x=>x.id));
    lastLiveSyncAt=Date.now();
-   if(sepChanged||bolChanged)renderHistory();
+   if((sepChanged||bolChanged)&&!$('#hist').classList.contains('hidden'))renderHistory();
    return true;
  }finally{
    liveSyncInProgress=false;
@@ -903,18 +915,20 @@ async function setupRealtime(force=false){
     const row=payload.new||payload.old;
     clearTimeout(historyRefreshTimer);
     historyRefreshTimer=setTimeout(async()=>{
-      const h=await sb.from('operacoes_historico').select('*').order('created_at',{ascending:true});
-      if(!h.error){
-        historico=h.data||[];
-        if(!$('#hist').classList.contains('hidden'))renderHistory();
-        if(row?.entidade==='separacao'&&row?.entidade_id&&openHistory.has(row.entidade_id))renderSepCard(row.entidade_id);
+      if(row?.entidade==='separacao'&&row?.entidade_id&&openHistory.has(row.entidade_id)){
+        await syncCardHistory(row.entidade_id);
+        renderSepCard(row.entidade_id);
       }
-    },350);
+      if(!$('#hist').classList.contains('hidden')){
+        await syncAllHistory();
+        renderHistory();
+      }
+    },500);
  })
  .subscribe(status=>{
     realtimeHealthy=status==='SUBSCRIBED';
     if(status==='SUBSCRIBED'){
-      syncLiveData({notifyNew:true});
+      lastLiveSyncAt=Date.now();
     }
     if(status==='CHANNEL_ERROR' || status==='TIMED_OUT' || status==='CLOSED'){
       realtimeHealthy=false;
@@ -929,14 +943,12 @@ function startLiveWatchdog(){
  livePollTimer=setInterval(async()=>{
    if(document.hidden || !navigator.onLine)return;
 
-   // Mesmo com Realtime saudável, faz uma checagem leve para evitar qualquer congelamento.
-   await syncLiveData({notifyNew:true});
-
-   // Se o canal parece morto ou ficou muito tempo sem atividade, força reconexão.
-   if(!realtimeHealthy || (Date.now()-lastLiveSyncAt)>20000){
+   // Realtime é a fonte principal. O polling só entra como contingência.
+   if(!realtimeHealthy || (Date.now()-lastLiveSyncAt)>60000){
+     await syncLiveData({notifyNew:true});
      setupRealtime(true);
    }
- },8000);
+ },30000);
 }
 
 document.addEventListener('visibilitychange',()=>{
@@ -950,6 +962,30 @@ window.addEventListener('online',()=>{
  syncLiveData({notifyNew:true});
  setupRealtime(true);
 });
+async function ensureFinalizadosLoaded(){
+ if(finalizadosLoadedAll)return true;
+ if(finalizadosLoading)return false;
+ finalizadosLoading=true;
+ try{
+   const {data,error}=await sb
+     .from('operacoes_separacoes')
+     .select('*')
+     .eq('status','finalizado')
+     .order('finalizado_em',{ascending:false});
+   if(error){
+     console.error('Falha ao carregar finalizados',error);
+     toast('Não foi possível carregar todos os finalizados');
+     return false;
+   }
+   const pendentes=separacoes.filter(x=>x.status!=='finalizado');
+   separacoes=[...pendentes,...(data||[])];
+   finalizadosLoadedAll=true;
+   lastSepFingerprint=rowsFingerprint(separacoes);
+   return true;
+ }finally{
+   finalizadosLoading=false;
+ }
+}
 async function syncCardHistory(id){
  const {data,error}=await sb
    .from('operacoes_historico')
@@ -1405,16 +1441,37 @@ $('#soundBtn').onclick=()=>{unlockSound();soundEnabled=!soundEnabled;updateSound
 updateSoundButton();
 document.addEventListener('pointerdown',unlockSound,{once:true});
 document.addEventListener('keydown',unlockSound,{once:true});
-$('#newSep').onclick=openSep;$('#newBol').onclick=openBol;$('#search').oninput=renderAll;
+$('#newSep').onclick=openSep;$('#newBol').onclick=openBol;
+let searchLoadTimer=null;
+$('#search').oninput=()=>{
+ renderAll();
+ clearTimeout(searchLoadTimer);
+ if($('#search').value.trim()){
+   searchLoadTimer=setTimeout(async()=>{
+     if(!finalizadosLoadedAll){
+       await ensureFinalizadosLoaded();
+       renderSep();
+     }
+   },350);
+ }
+};
 $$('.nav').forEach(b=>b.onclick=async()=>{
  $$('.nav').forEach(x=>x.classList.remove('active'));
  b.classList.add('active');
  $$('.view').forEach(v=>v.classList.add('hidden'));
  $('#'+b.dataset.view).classList.remove('hidden');
- if(b.dataset.view==='hist')await syncAllHistory();
+ if(b.dataset.view==='hist'){
+   await Promise.all([syncAllHistory(),ensureFinalizadosLoaded()]);
+ }
  renderAll();
 });
-$$('#sepFilters .filter').forEach(b=>b.onclick=()=>{$$('#sepFilters .filter').forEach(x=>x.classList.remove('active'));b.classList.add('active');sepFilter=b.dataset.filter;renderSep()});
+$('#sepFilters .filter').forEach(b=>b.onclick=async()=>{
+ $('#sepFilters .filter').forEach(x=>x.classList.remove('active'));
+ b.classList.add('active');
+ sepFilter=b.dataset.filter;
+ if(sepFilter==='finalizados')await ensureFinalizadosLoaded();
+ renderSep();
+});
 boot();
 </script>
 
