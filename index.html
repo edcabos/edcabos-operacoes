@@ -1406,10 +1406,10 @@ updateSoundButton();
 document.addEventListener('pointerdown',unlockSound,{once:true});
 document.addEventListener('keydown',unlockSound,{once:true});
 $('#newSep').onclick=openSep;$('#newBol').onclick=openBol;$('#search').oninput=renderAll;
-$('.nav').forEach(b=>b.onclick=async()=>{
- $('.nav').forEach(x=>x.classList.remove('active'));
+$$('.nav').forEach(b=>b.onclick=async()=>{
+ $$('.nav').forEach(x=>x.classList.remove('active'));
  b.classList.add('active');
- $('.view').forEach(v=>v.classList.add('hidden'));
+ $$('.view').forEach(v=>v.classList.add('hidden'));
  $('#'+b.dataset.view).classList.remove('hidden');
  if(b.dataset.view==='hist')await syncAllHistory();
  renderAll();
