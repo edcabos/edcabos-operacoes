@@ -347,6 +347,15 @@ textarea[data-requester-note]:focus,textarea[data-internal-note]:focus{
   font-weight:700;
 }
 
+
+/* Magalu calculator */
+.mg-table-wrap{overflow:auto;max-height:440px;margin-top:12px}
+.mg-table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}
+.mg-table th,.mg-table td{padding:10px;border-bottom:1px solid #343b43;white-space:nowrap}
+.mg-table thead th{position:sticky;top:0;background:#171a1e;z-index:1}
+.mg-table .mg-current{background:#163e2b;color:#b6f3ce}
+#price-magalu input[readonly]{opacity:.72;cursor:not-allowed}
+#price-magalu summary{cursor:pointer;font-weight:700}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js"></script>
 
@@ -419,6 +428,7 @@ textarea[data-requester-note]:focus,textarea[data-internal-note]:focus{
       <button class="priceTab" data-price-tab="tiktok">TikTok</button>
       <button class="priceTab" data-price-tab="kabum">KaBuM!</button>
       <button class="priceTab" data-price-tab="amazon">Amazon</button>
+      <button class="priceTab" data-price-tab="magalu">Magalu</button>
     </div>
 
     <div class="pricePanel" id="price-ml">
@@ -535,6 +545,29 @@ textarea[data-requester-note]:focus,textarea[data-internal-note]:focus{
       </div></div>
       <div id="am-results" class="priceResults" aria-live="polite"></div>
       <div class="priceCard" style="margin-top:16px"><h3>Promoções registradas para o SKU</h3><button type="button" class="secondary" id="am-refresh">Atualizar registros</button><div id="am-history" style="margin-top:12px">Informe um SKU.</div></div>
+    </div>
+
+    <div class="pricePanel hidden" id="price-magalu">
+      <div class="pricePanelHead"><div><h2>Magalu</h2><p>Frete por preço final e peso · tabelas fornecidas em 27/11/2026 · desconto de 50%.</p></div><button class="secondary miniBtn" id="mg-reset" type="button">Restaurar padrões</button></div>
+      <div class="priceLayout"><div class="priceCard"><h3>Entradas por item</h3>
+        <div class="priceField"><label for="mg-cost">Custo do produto</label><div class="moneyInput"><span>R$</span><input id="mg-cost" type="number" min="0.01" step="0.01" value="20"></div></div>
+        <div class="priceField"><label for="mg-margin">Margem sobre custo · mínimo 30%</label><div class="percentInput"><input id="mg-margin" type="number" min="30" step="0.1" value="30"><span>%</span></div></div>
+        <div class="priceField"><label for="mg-weight">Peso real com embalagem</label><div class="percentInput"><input id="mg-weight" type="number" min="0.001" step="0.001" value="0.5"><span>kg</span></div></div>
+        <div class="priceField"><label for="mg-cubed">Peso cubado · se houver</label><div class="percentInput"><input id="mg-cubed" type="number" min="0" step="0.001" placeholder="Opcional"><span>kg</span></div></div>
+        <p id="mg-weight-info" class="profitMeta"></p>
+        <div class="priceField"><label for="mg-extra">Outros custos por item</label><div class="moneyInput"><span>R$</span><input id="mg-extra" type="number" min="0" step="0.01" value="0"></div></div>
+      </div><div class="priceCard"><h3>Parâmetros fixos</h3>
+        <div class="priceField"><label>Comissão Magalu</label><div class="percentInput"><input readonly value="18" aria-label="Comissão Magalu fixa 18%"><span>%</span></div></div>
+        <div class="priceField"><label>Taxa fixa por item</label><div class="moneyInput"><span>R$</span><input readonly value="5,50" aria-label="Taxa fixa R$ 5,50 por item"></div></div>
+        <div class="priceField"><label>Comissão vendedor sobre bruto</label><div class="percentInput"><input readonly value="2" aria-label="Comissão vendedor fixa 2%"><span>%</span></div></div>
+        <div class="priceField"><label>Imposto médio</label><div class="percentInput"><input readonly value="15" aria-label="Imposto médio fixo 15%"><span>%</span></div></div>
+        <div class="priceField"><label>Embalagem</label><div class="moneyInput"><span>R$</span><input readonly value="1,11" aria-label="Embalagem fixa R$ 1,11"></div></div>
+        <div class="priceParamsList"><div><b>Abaixo de R$ 79</b><span>Frete: 4% do preço bruto</span></div><div><b>De R$ 79 até R$ 199, inclusive</b><span>Primeira tabela · coluna 50% desconto</span></div><div><b>Acima de R$ 199</b><span>Segunda tabela · coluna 50% desconto</span></div></div>
+        <p class="profitMeta">É considerado o maior entre peso real e cubado. Informe o peso cubado em kg conforme o transportador. Tabelas para Regular/Coleta; a faixa de R$ 79 a R$ 199 exclui itens de mercado, conforme a imagem fornecida.</p>
+      </div></div>
+      <div id="mg-results" class="priceResults" aria-live="polite"></div>
+      <div id="mg-breakdown" class="priceCard" style="margin-top:16px" aria-live="polite"></div>
+      <details class="priceCard" style="margin-top:16px"><summary>Tabelas de frete com 50% de desconto</summary><div class="mg-table-wrap"><table class="mg-table"><thead><tr><th>Peso considerado</th><th>R$ 79 a R$ 199</th><th>Acima de R$ 199</th></tr></thead><tbody id="mg-weight-table"></tbody></table></div></details>
     </div>
   </section>
 
@@ -1637,6 +1670,48 @@ document.addEventListener('DOMContentLoaded',()=>{
  calculate();
 });
 if(typeof module!=='undefined')module.exports={categories,fee,solve};
+})();
+
+</script>
+<script>
+(function(){
+'use strict';
+const WEIGHTS=[.5,1,2,5,9,13,17,23,30,40,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,Infinity];
+const MID=[17.95,20.45,21.45,25.45,38.95,49.45,55.95,67.45,74.45,79.95,94.95,98.95,103.45,107.95,112.95,117.95,122.95,128.45,133.95,139.95,145.95,152.45,158.95,165.95,172.95,180.45,187.95];
+const HIGH=[19.45,22.45,23.45,27.45,42.45,53.45,60.45,72.95,80.45,86.45,102.95,106.95,111.95,116.95,121.95,127.45,132.95,138.95,144.95,151.45,157.95,164.95,171.95,179.45,186.95,194.95,202.95];
+const FEES=Object.freeze({platform:.18,fixed:5.50,seller:.02,tax:.15,packaging:1.11,lowFreight:.04});
+const centUp=n=>Math.ceil(n*100-1e-8)/100;
+function weightIndex(real,cubed=0){if(!Number.isFinite(real)||real<=0||!Number.isFinite(cubed)||cubed<0)throw Error('Informe peso real maior que zero e peso cubado válido.');return WEIGHTS.findIndex(w=>Math.max(real,cubed)<=w);}
+function quote(cost,margin,real,cubed=0,extra=0){
+ if(![cost,margin,extra].every(Number.isFinite)||cost<=0||margin<30||extra<0)throw Error('Informe custo positivo, margem de pelo menos 30% e custos adicionais válidos.');
+ const i=weightIndex(real,cubed),base=cost*(1+margin/100)+FEES.packaging+FEES.fixed+extra;
+ const low=centUp(base/(1-FEES.platform-FEES.seller-FEES.tax-FEES.lowFreight));
+ const mid=Math.max(79,centUp((base+MID[i])/(1-FEES.platform-FEES.seller-FEES.tax)));
+ const high=Math.max(199.01,centUp((base+HIGH[i])/(1-FEES.platform-FEES.seller-FEES.tax)));
+ const candidates=[{label:'Abaixo de R$ 79',price:low,valid:low<79,freight:low*FEES.lowFreight},{label:'De R$ 79 a R$ 199',price:mid,valid:mid<=199,freight:MID[i]},{label:'Acima de R$ 199',price:high,valid:true,freight:HIGH[i]}];
+ for(const c of candidates){if(!Number.isFinite(c.price)||c.price>1e10)throw Error('Valores acima do limite de cálculo.');c.platform=c.price*FEES.platform;c.seller=c.price*FEES.seller;c.tax=c.price*FEES.tax;c.profit=c.price-c.platform-c.seller-c.tax-FEES.fixed-c.freight-FEES.packaging-cost-extra;}
+ const selected=candidates.filter(c=>c.valid).sort((a,b)=>a.price-b.price)[0];
+ return {i,weight:Math.max(real,cubed),candidates,selected};
+}
+const $=id=>document.getElementById(id),money=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),number=id=>$(id).value.trim()===''?NaN:Number($(id).value);
+function weightLabel(i){return i===0?'Até 500 g':i===WEIGHTS.length-1?'Acima de 200 kg':`Acima de ${WEIGHTS[i-1].toLocaleString('pt-BR')} até ${WEIGHTS[i].toLocaleString('pt-BR')} kg`;}
+function render(){
+ try{
+ const cost=number('mg-cost'),margin=number('mg-margin'),extra=number('mg-extra'),real=number('mg-weight'),cubed=$('mg-cubed').value.trim()===''?0:number('mg-cubed');
+ const q=quote(cost,margin,real,cubed,extra),s=q.selected;
+ $('mg-weight-info').textContent=`Peso considerado: ${q.weight.toLocaleString('pt-BR')} kg · ${weightLabel(q.i)}.`;
+ $('mg-results').innerHTML=q.candidates.map(c=>`<div class="priceResultCard ${c===s?'valid':'review'}"><div class="priceResultTop"><b>${c.label}</b><span class="priceStatus">${!c.valid?'FORA DA FAIXA':c===s?'RECOMENDADO':'ALTERNATIVA'}</span></div><div class="priceMetric primary"><span>${c.valid?'Preço de venda':'Cálculo fora da faixa — não usar'}</span><strong>${money(c.price)}</strong></div><div class="priceMetric secondary"><span>Frete${c===q.candidates[0]?' · 4% do bruto':' · tabela com 50% de desconto'}</span><strong>${money(c.freight)}</strong></div><div class="priceFormula">${c.valid?'Preço compatível com esta faixa.':'O preço calculado não pertence a esta faixa; use o recomendado.'}</div></div>`).join('');
+ const rows=[['Preço recomendado',money(s.price)],['Custo do produto',money(cost)],['Comissão Magalu · 18%',money(s.platform)],['Taxa fixa por item',money(FEES.fixed)],['Comissão vendedor · 2% do bruto',money(s.seller)],['Imposto médio · 15%',money(s.tax)],['Frete da faixa',money(s.freight)],['Embalagem',money(FEES.packaging)],['Outros custos por item',money(extra)],['Lucro final estimado',money(s.profit)],['Lucro sobre o custo',(s.profit/cost*100).toFixed(2).replace('.',',')+'%'],['Lucro sobre o preço de venda',(s.profit/s.price*100).toFixed(2).replace('.',',')+'%']];
+ $('mg-breakdown').innerHTML='<h3>Composição do preço recomendado</h3>'+rows.map(([label,value])=>`<div class="priceMetric secondary"><span>${label}</span><strong>${value}</strong></div>`).join('')+`<p class="profitMeta">Margem desejada de ${margin}% como acréscimo sobre o custo do produto, no padrão do Keep. Arredondamento do preço para cima em centavos. A faixa de frete é definida pelo preço final.</p>`;
+ $('mg-weight-table').innerHTML=WEIGHTS.map((_,i)=>`<tr${i===q.i?' class="mg-current"':''}><th scope="row">${weightLabel(i)}</th><td>${money(MID[i])}</td><td>${money(HIGH[i])}</td></tr>`).join('');
+ }catch(e){$('mg-weight-info').textContent='Preencha os pesos em quilogramas. Exemplo: 500 g = 0,5 kg.';$('mg-results').innerHTML='';$('mg-breakdown').innerHTML='<p role="alert">'+e.message+'</p>';$('mg-weight-table').innerHTML=WEIGHTS.map((_,i)=>`<tr><th scope="row">${weightLabel(i)}</th><td>${money(MID[i])}</td><td>${money(HIGH[i])}</td></tr>`).join('');}
+}
+document.addEventListener('DOMContentLoaded',()=>{
+ ['mg-cost','mg-margin','mg-weight','mg-cubed','mg-extra'].forEach(id=>$(id).addEventListener('input',render));
+ $('mg-reset').onclick=()=>{Object.entries({'mg-cost':'20','mg-margin':'30','mg-weight':'0.5','mg-cubed':'','mg-extra':'0'}).forEach(([id,v])=>$(id).value=v);render();};
+ render();
+});
+if(typeof module!=='undefined')module.exports={WEIGHTS,MID,HIGH,FEES,quote,weightIndex};
 })();
 
 </script>
